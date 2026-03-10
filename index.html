@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tree Count - Camera Capture</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Tree Count</h1>
+    <p>Use your camera to take a photo and detect trees (or plants) in it.</p>
+  </header>
+
+  <main>
+    <section class="camera">
+      <div class="video-wrapper">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="overlay" class="overlay"></canvas>
+      </div>
+      <div class="controls">
+        <button id="startButton" class="primary">Start camera</button>
+        <button id="captureButton" disabled>Take photo</button>
+        <button id="resetButton" disabled>Reset</button>
+      </div>
+    </section>
+
+    <section class="results">
+      <h2>Results</h2>
+      <div class="status" id="status">Model loading…</div>
+      <div class="stats">
+        <div class="stat">
+          <span class="label">Detected trees/plants:</span>
+          <span class="value" id="treeCount">0</span>
+        </div>
+        <div class="stat">
+          <span class="label">Total objects detected:</span>
+          <span class="value" id="objectCount">0</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="notes">
+      <h2>How it works</h2>
+      <ul>
+        <li>The page uses your camera to capture a photo.</li>
+        <li>It then runs an object detection model (COCO-SSD) in your browser.</li>
+        <li>It counts detections labeled as <strong>"tree"</strong>, <strong>"potted plant"</strong>, or other plant-like objects.</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>
+    <small>Works best in modern browsers (Chrome, Edge, Firefox) with camera access.</small>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.12.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
