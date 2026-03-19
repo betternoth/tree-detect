@@ -119,103 +119,62 @@ function nms(boxes, scores, iouThreshold = 0.45) {
   return out;
 }
 
+function sigmoid(x) {
+  return 1 / (1 + Math.exp(-x));
+}
+
 function postprocessOutput(raw, imageWidth, imageHeight, confThreshold = 0.25) {
   if (!raw || !raw.dims || !raw.data) return [];
   console.log("ONNX raw output dims", raw.dims);
 
   const detections = [];
+  const dims = raw.dims;
+  const data = raw.data;
 
-  if (raw.dims.length === 3 && raw.dims[2] >= 6) {
-    const [batch, numDet, cols] = raw.dims;
-    const data = raw.data;
+  // Format from custom single-class tree model export: [1, 5, anchors]
+  if (dims.length === 3 && dims[0] === 1 && dims[1] === 5) {
+    const anchors = dims[2];
+    for (let j = 0; j < anchors; j++) {
+      const x = data[j];
+      const y = data[j + anchors];
+      const w = data[j + 2 * anchors];
+      const h = data[j + 3 * anchors];
+      const confRaw = data[j + 4 * anchors];
+      const score = sigmoid(confRaw);
 
-    for (let i = 0; i < numDet; i++) {
-      const base = i * cols;
-      const x = data[base + 0];
-      const y = data[base + 1];
-      const w = data[base + 2];
-      const h = data[base + 3];
-      const score = data[base + 4];
+      if (score < confThreshold) continue;
 
-      if (cols === 6) {
-        // format: [x1, y1, x2, y2, score, class]
-        if (score < confThreshold) continue;
-
-        const classId = Math.round(data[base + 5]);
-        const x1 = Math.max(0, x);
-        const y1 = Math.max(0, y);
-        const x2 = Math.min(imageWidth, w);
-        const y2 = Math.min(imageHeight, h);
-
-        detections.push({
-          bbox: [x1, y1, x2, y2],
-          score,
-          classId,
-          class: classNames[classId] ?? `class ${classId}`,
-        });
-
-        continue;
-      }
-
-      // format: [x_center, y_center, width, height, obj_conf, class0, class1, ...]
-      let bestClass = -1;
-      let bestScore = 0;
-
-      for (let c = 5; c < cols; c++) {
-        const clsScore = data[base + c];
-        if (clsScore > bestScore) {
-          bestScore = clsScore;
-          bestClass = c - 5;
-        }
-      }
-
-      const confidence = score * bestScore;
-      if (confidence < confThreshold) continue;
-
-      const isRelative = x <= 1 && y <= 1 && w <= 1 && h <= 1;
-      let x1, y1, x2, y2;
-
-      if (isRelative) {
-        x1 = Math.max(0, (x - w / 2) * imageWidth);
-        y1 = Math.max(0, (y - h / 2) * imageHeight);
-        x2 = Math.min(imageWidth, (x + w / 2) * imageWidth);
-        y2 = Math.min(imageHeight, (y + h / 2) * imageHeight);
-      } else {
-        x1 = Math.max(0, x - w / 2);
-        y1 = Math.max(0, y - h / 2);
-        x2 = Math.min(imageWidth, x + w / 2);
-        y2 = Math.min(imageHeight, y + h / 2);
-      }
+      const x1 = Math.max(0, x - w / 2);
+      const y1 = Math.max(0, y - h / 2);
+      const x2 = Math.min(imageWidth, x + w / 2);
+      const y2 = Math.min(imageHeight, y + h / 2);
 
       detections.push({
         bbox: [x1, y1, x2, y2],
-        score: confidence,
-        classId: bestClass,
-        class: classNames[bestClass] ?? `class ${bestClass}`,
+        score,
+        classId: 0,
+        class: classNames[0] ?? "tree",
       });
     }
 
-    if (raw.dims[1] > 100) {
-      const boxes = detections.map((d) => d.bbox);
-      const scores = detections.map((d) => d.score);
-      const keep = nms(boxes, scores, 0.45);
-      return keep.map((i) => detections[i]);
-    }
+    if (!detections.length) return [];
 
-    return detections;
+    const boxes = detections.map((d) => d.bbox);
+    const scores = detections.map((d) => d.score);
+    const keep = nms(boxes, scores, 0.45);
+    return keep.map((i) => detections[i]);
   }
 
-  if (raw.dims.length === 2 && raw.dims[1] >= 6) {
-    const [numDet, cols] = raw.dims;
-    const data = raw.data;
-
+  // Format [1, numDet, 6], + classic multi-class preset
+  if (dims.length === 3 && dims[2] >= 6) {
+    const [_batch, numDet, cols] = dims;
     for (let i = 0; i < numDet; i++) {
       const base = i * cols;
       const x1 = Math.max(0, data[base + 0]);
       const y1 = Math.max(0, data[base + 1]);
       const x2 = Math.min(imageWidth, data[base + 2]);
       const y2 = Math.min(imageHeight, data[base + 3]);
-      const score = data[base + 4];
+      const score = sigmoid(data[base + 4]);
       const classId = Math.round(data[base + 5]);
       if (score < confThreshold) continue;
 
@@ -227,10 +186,44 @@ function postprocessOutput(raw, imageWidth, imageHeight, confThreshold = 0.25) {
       });
     }
 
-    return detections;
+    if (!detections.length) return [];
+
+    const boxes = detections.map((d) => d.bbox);
+    const scores = detections.map((d) => d.score);
+    const keep = nms(boxes, scores, 0.45);
+    return keep.map((i) => detections[i]);
   }
 
-  console.warn("Unknown ONNX output format", raw.dims);
+  // Fallback for other output shapes
+  if (dims.length === 2 && dims[1] >= 6) {
+    const [numDet, cols] = dims;
+    for (let i = 0; i < numDet; i++) {
+      const base = i * cols;
+      const x1 = Math.max(0, data[base + 0]);
+      const y1 = Math.max(0, data[base + 1]);
+      const x2 = Math.min(imageWidth, data[base + 2]);
+      const y2 = Math.min(imageHeight, data[base + 3]);
+      const score = sigmoid(data[base + 4]);
+      const classId = Math.round(data[base + 5]);
+      if (score < confThreshold) continue;
+
+      detections.push({
+        bbox: [x1, y1, x2, y2],
+        score,
+        classId,
+        class: classNames[classId] ?? `class ${classId}`,
+      });
+    }
+
+    if (!detections.length) return [];
+
+    const boxes = detections.map((d) => d.bbox);
+    const scores = detections.map((d) => d.score);
+    const keep = nms(boxes, scores, 0.45);
+    return keep.map((i) => detections[i]);
+  }
+
+  console.warn("Unknown ONNX output format", dims);
   return [];
 }
 
