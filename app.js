@@ -119,11 +119,7 @@ function nms(boxes, scores, iouThreshold = 0.45) {
   return out;
 }
 
-function sigmoid(x) {
-  return 1 / (1 + Math.exp(-x));
-}
-
-function postprocessOutput(raw, imageWidth, imageHeight, confThreshold = 0.25) {
+function postprocessOutput(raw, imageWidth, imageHeight, confThreshold = 0.01) {
   if (!raw || !raw.dims || !raw.data) return [];
   console.log("ONNX raw output dims", raw.dims);
 
@@ -139,8 +135,7 @@ function postprocessOutput(raw, imageWidth, imageHeight, confThreshold = 0.25) {
       const y = data[j + anchors];
       const w = data[j + 2 * anchors];
       const h = data[j + 3 * anchors];
-      const confRaw = data[j + 4 * anchors];
-      const score = sigmoid(confRaw);
+      const score = data[j + 4 * anchors];
 
       if (score < confThreshold) continue;
 
@@ -165,7 +160,7 @@ function postprocessOutput(raw, imageWidth, imageHeight, confThreshold = 0.25) {
     return keep.map((i) => detections[i]);
   }
 
-  // Format [1, numDet, 6], + classic multi-class preset
+  // Format from other models: [1, numDet, 6]
   if (dims.length === 3 && dims[2] >= 6) {
     const [_batch, numDet, cols] = dims;
     for (let i = 0; i < numDet; i++) {
@@ -174,7 +169,7 @@ function postprocessOutput(raw, imageWidth, imageHeight, confThreshold = 0.25) {
       const y1 = Math.max(0, data[base + 1]);
       const x2 = Math.min(imageWidth, data[base + 2]);
       const y2 = Math.min(imageHeight, data[base + 3]);
-      const score = sigmoid(data[base + 4]);
+      const score = data[base + 4];
       const classId = Math.round(data[base + 5]);
       if (score < confThreshold) continue;
 
@@ -203,7 +198,7 @@ function postprocessOutput(raw, imageWidth, imageHeight, confThreshold = 0.25) {
       const y1 = Math.max(0, data[base + 1]);
       const x2 = Math.min(imageWidth, data[base + 2]);
       const y2 = Math.min(imageHeight, data[base + 3]);
-      const score = sigmoid(data[base + 4]);
+      const score = data[base + 4];
       const classId = Math.round(data[base + 5]);
       if (score < confThreshold) continue;
 
