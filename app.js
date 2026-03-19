@@ -120,53 +120,118 @@ function nms(boxes, scores, iouThreshold = 0.45) {
 }
 
 function postprocessOutput(raw, imageWidth, imageHeight, confThreshold = 0.25) {
-  const [batch, numDet, cols] = raw.dims;
-  const data = raw.data;
+  if (!raw || !raw.dims || !raw.data) return [];
+  console.log("ONNX raw output dims", raw.dims);
+
   const detections = [];
 
-  for (let i = 0; i < numDet; i++) {
-    const base = i * cols;
-    const x = data[base + 0];
-    const y = data[base + 1];
-    const w = data[base + 2];
-    const h = data[base + 3];
-    const objConfidence = data[base + 4];
+  if (raw.dims.length === 3 && raw.dims[2] >= 6) {
+    const [batch, numDet, cols] = raw.dims;
+    const data = raw.data;
 
-    let bestClass = -1;
-    let bestScore = 0;
+    for (let i = 0; i < numDet; i++) {
+      const base = i * cols;
+      const x = data[base + 0];
+      const y = data[base + 1];
+      const w = data[base + 2];
+      const h = data[base + 3];
+      const score = data[base + 4];
 
-    for (let c = 5; c < cols; c++) {
-      const clsScore = data[base + c];
-      if (clsScore > bestScore) {
-        bestScore = clsScore;
-        bestClass = c - 5;
+      if (cols === 6) {
+        // format: [x1, y1, x2, y2, score, class]
+        if (score < confThreshold) continue;
+
+        const classId = Math.round(data[base + 5]);
+        const x1 = Math.max(0, x);
+        const y1 = Math.max(0, y);
+        const x2 = Math.min(imageWidth, w);
+        const y2 = Math.min(imageHeight, h);
+
+        detections.push({
+          bbox: [x1, y1, x2, y2],
+          score,
+          classId,
+          class: classNames[classId] ?? `class ${classId}`,
+        });
+
+        continue;
       }
+
+      // format: [x_center, y_center, width, height, obj_conf, class0, class1, ...]
+      let bestClass = -1;
+      let bestScore = 0;
+
+      for (let c = 5; c < cols; c++) {
+        const clsScore = data[base + c];
+        if (clsScore > bestScore) {
+          bestScore = clsScore;
+          bestClass = c - 5;
+        }
+      }
+
+      const confidence = score * bestScore;
+      if (confidence < confThreshold) continue;
+
+      const isRelative = x <= 1 && y <= 1 && w <= 1 && h <= 1;
+      let x1, y1, x2, y2;
+
+      if (isRelative) {
+        x1 = Math.max(0, (x - w / 2) * imageWidth);
+        y1 = Math.max(0, (y - h / 2) * imageHeight);
+        x2 = Math.min(imageWidth, (x + w / 2) * imageWidth);
+        y2 = Math.min(imageHeight, (y + h / 2) * imageHeight);
+      } else {
+        x1 = Math.max(0, x - w / 2);
+        y1 = Math.max(0, y - h / 2);
+        x2 = Math.min(imageWidth, x + w / 2);
+        y2 = Math.min(imageHeight, y + h / 2);
+      }
+
+      detections.push({
+        bbox: [x1, y1, x2, y2],
+        score: confidence,
+        classId: bestClass,
+        class: classNames[bestClass] ?? `class ${bestClass}`,
+      });
     }
 
-    const score = objConfidence * bestScore;
-    if (score < confThreshold) continue;
+    if (raw.dims[1] > 100) {
+      const boxes = detections.map((d) => d.bbox);
+      const scores = detections.map((d) => d.score);
+      const keep = nms(boxes, scores, 0.45);
+      return keep.map((i) => detections[i]);
+    }
 
-    // coordinates in model are relative to input size (0..1) or absolute pixels (onnx export may vary). adjust if necessary
-    const x1 = Math.max(0, (x - w / 2) * imageWidth);
-    const y1 = Math.max(0, (y - h / 2) * imageHeight);
-    const x2 = Math.min(imageWidth, (x + w / 2) * imageWidth);
-    const y2 = Math.min(imageHeight, (y + h / 2) * imageHeight);
-
-    detections.push({
-      bbox: [x1, y1, x2, y2],
-      score,
-      classId: bestClass,
-      class: classNames[bestClass] ?? `class ${bestClass}`,
-    });
+    return detections;
   }
 
-  if (detections.length === 0) return [];
+  if (raw.dims.length === 2 && raw.dims[1] >= 6) {
+    const [numDet, cols] = raw.dims;
+    const data = raw.data;
 
-  const boxes = detections.map((d) => d.bbox);
-  const scores = detections.map((d) => d.score);
-  const keep = nms(boxes, scores, 0.45);
+    for (let i = 0; i < numDet; i++) {
+      const base = i * cols;
+      const x1 = Math.max(0, data[base + 0]);
+      const y1 = Math.max(0, data[base + 1]);
+      const x2 = Math.min(imageWidth, data[base + 2]);
+      const y2 = Math.min(imageHeight, data[base + 3]);
+      const score = data[base + 4];
+      const classId = Math.round(data[base + 5]);
+      if (score < confThreshold) continue;
 
-  return keep.map((i) => detections[i]);
+      detections.push({
+        bbox: [x1, y1, x2, y2],
+        score,
+        classId,
+        class: classNames[classId] ?? `class ${classId}`,
+      });
+    }
+
+    return detections;
+  }
+
+  console.warn("Unknown ONNX output format", raw.dims);
+  return [];
 }
 
 function countTrees(detections) {
