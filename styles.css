@@ -63,10 +63,16 @@ main {
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 9;
+  max-height: 80vh;
   overflow: hidden;
   border-radius: var(--radius);
   background: #111a2f;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.video-wrapper.expand {
+  aspect-ratio: auto;
+  height: auto;
 }
 
 video,

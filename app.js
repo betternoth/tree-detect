@@ -32,6 +32,19 @@ async function loadModel() {
   }
 }
 
+function updateVideoSize() {
+  const wrapper = document.querySelector('.video-wrapper');
+  if (!video.videoWidth || !video.videoHeight || !wrapper) return;
+
+  // ให้สัดส่วนพอดีกับกล้องมือถือจริง
+  const maxWidth = wrapper.clientWidth;
+  const height = (video.videoHeight / video.videoWidth) * maxWidth;
+  wrapper.style.height = `${height}px`;
+
+  overlay.width = video.videoWidth;
+  overlay.height = video.videoHeight;
+}
+
 async function startCamera() {
   if (!navigator.mediaDevices?.getUserMedia) {
     setStatus("Camera not supported in this browser.", true);
@@ -46,6 +59,9 @@ async function startCamera() {
     video.srcObject = stream;
 
     await video.play();
+
+    updateVideoSize();
+    window.addEventListener('resize', updateVideoSize);
 
     captureButton.disabled = false;
     resetButton.disabled = false;
@@ -62,6 +78,7 @@ function stopCamera() {
   stream.getTracks().forEach((track) => track.stop());
   stream = null;
   video.srcObject = null;
+  window.removeEventListener('resize', updateVideoSize);
 }
 
 function drawBoxes(detections) {
