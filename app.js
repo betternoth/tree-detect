@@ -2,6 +2,7 @@ const video = document.getElementById("video");
 const overlay = document.getElementById("overlay");
 const startButton = document.getElementById("startButton");
 const captureButton = document.getElementById("captureButton");
+const continueButton = document.getElementById("continueButton");
 const resetButton = document.getElementById("resetButton");
 const statusEl = document.getElementById("status");
 const treeCountEl = document.getElementById("treeCount");
@@ -64,6 +65,7 @@ async function startCamera() {
     window.addEventListener('resize', updateVideoSize);
 
     captureButton.disabled = false;
+    continueButton.disabled = true;
     resetButton.disabled = false;
     setStatus("Ready. Take a photo to detect trees.");
   } catch (error) {
@@ -303,21 +305,38 @@ async function capturePhoto() {
     lastDetections = detections;
 
     if (!detections.length) {
-      setStatus("No objects detected.");
+      setStatus("No objects detected. Image frozen.");
     } else {
-      setStatus(`Detected ${detections.length} objects.`);
+      setStatus(`Detected ${detections.length} objects. Image frozen.`);
     }
 
     countTrees(detections);
+    video.pause();
+    captureButton.disabled = true;
+    continueButton.disabled = false;
   } catch (error) {
     console.error(error);
     setStatus("Detection failed. See console for details.", true);
   }
 }
 
+function continueCamera() {
+  if (!stream) {
+    setStatus("Camera stream not available.", true);
+    return;
+  }
+
+  video.play();
+  updateVideoSize();
+  captureButton.disabled = false;
+  continueButton.disabled = true;
+  setStatus("Camera resumed. Take a photo now.");
+}
+
 function reset() {
   stopCamera();
   captureButton.disabled = true;
+  continueButton.disabled = true;
   resetButton.disabled = true;
   startButton.disabled = false;
   lastDetections = [];
@@ -331,6 +350,7 @@ function reset() {
 
 startButton.addEventListener("click", startCamera);
 captureButton.addEventListener("click", capturePhoto);
+continueButton.addEventListener("click", continueCamera);
 resetButton.addEventListener("click", reset);
 
 loadModel();
